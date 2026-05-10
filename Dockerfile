@@ -6,7 +6,7 @@ ENV PUID=99 \
     UMASK=002 \
     TZ=America/New_York
 
-# Build + runtime deps (bookworm, no version pins, stable base)
+# Build + runtime deps
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         git \
@@ -34,17 +34,18 @@ RUN apt-get update && \
 
 WORKDIR /app
 
-# Clone Calibre-Web (upstream)
+# Clone Calibre-Web
 RUN git clone https://github.com/janeczku/calibre-web.git /app/calibre-web
 
 WORKDIR /app/calibre-web
 
-# Install Python deps
+# Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy plugin setup script
+# Install plugins
 COPY scripts/plugin-setup.sh /app/plugin-setup.sh
 RUN chmod +x /app/plugin-setup.sh && /app/plugin-setup.sh /app/calibre-web
+
 
 # ---------- Runtime stage ----------
 FROM python:3.11-bookworm AS runtime
@@ -54,7 +55,11 @@ ENV PUID=99 \
     UMASK=002 \
     TZ=America/New_York
 
-# Only runtime libs (no build tools)
+# ⭐ Copy Python dependencies from builder stage
+COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
+COPY --from=builder /usr/local/bin /usr/local/bin
+
+# Runtime-only system libs
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         imagemagick \
@@ -77,15 +82,15 @@ RUN apt-get update && \
         && \
     rm -rf /var/lib/apt/lists/*
 
-# Create runtime user (no GID assumptions)
+# Create runtime user
 RUN useradd -u ${PUID} -m abc
 
 WORKDIR /app/calibre-web
 
-# Copy app from builder
+# Copy application from builder
 COPY --from=builder /app/calibre-web /app/calibre-web
 
-# Ensure ownership
+# Fix ownership
 RUN chown -R abc:abc /app
 
 USER abc
