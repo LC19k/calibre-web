@@ -45,27 +45,21 @@ jobs:
       - name: Get latest upstream release tag
         id: upstream_release
         run: |
-          set -e
           TAG_NAME=""
           if RELEASE_JSON=$(curl -fsSL "https://api.github.com/repos/${UPSTREAM_REPO}/releases/latest"); then
             TAG_NAME=$(echo "$RELEASE_JSON" | jq -r '.tag_name')
-            if [ "$TAG_NAME" = "null" ]; then
-              TAG_NAME=""
-            fi
+            if [ "$TAG_NAME" = "null" ]; then TAG_NAME=""; fi
           fi
           echo "tag=$TAG_NAME" >> $GITHUB_OUTPUT
 
       - name: Get latest upstream commit on default branch
         id: upstream_commit
         run: |
-          set -e
           BRANCH="${{ steps.upstream_branch.outputs.branch }}"
           SHA=""
           if COMMIT_JSON=$(curl -fsSL "https://api.github.com/repos/${UPSTREAM_REPO}/commits/${BRANCH}"); then
             SHA=$(echo "$COMMIT_JSON" | jq -r '.sha')
-            if [ "$SHA" = "null" ]; then
-              SHA=""
-            fi
+            if [ "$SHA" = "null" ]; then SHA=""; fi
           fi
           echo "sha=$SHA" >> $GITHUB_OUTPUT
 
@@ -114,12 +108,19 @@ jobs:
           BUILD_STABLE="false"
           BUILD_NIGHTLY="false"
 
+          # Build stable if upstream release changed
           if [ -n "$UPSTREAM_REL" ] && [ "$UPSTREAM_REL" != "$CURRENT_REL" ]; then
             BUILD_STABLE="true"
           fi
 
+          # Build nightly if upstream commit changed
           if [ -n "$UPSTREAM_SHA" ] && [ "$UPSTREAM_SHA" != "$CURRENT_SHA" ]; then
             BUILD_NIGHTLY="true"
+          fi
+
+          # ⭐ Force stable build on local commits
+          if [ "${{ github.event_name }}" = "push" ]; then
+            BUILD_STABLE="true"
           fi
 
           echo "build_stable=$BUILD_STABLE" >> $GITHUB_OUTPUT
