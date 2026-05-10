@@ -32,27 +32,50 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Get upstream default branch
+        id: upstream_branch
+        run: |
+          REPO_JSON=$(curl -fsSL "https://api.github.com/repos/${UPSTREAM_REPO}")
+          DEFAULT_BRANCH=$(echo "$REPO_JSON" | jq -r '.default_branch')
+          if [ -z "$DEFAULT_BRANCH" ] || [ "$DEFAULT_BRANCH" = "null" ]; then
+            DEFAULT_BRANCH="master"
+          fi
+          echo "branch=$DEFAULT_BRANCH" >> $GITHUB_OUTPUT
+
       - name: Get latest upstream release tag
         id: upstream_release
         run: |
-          RELEASE_JSON=$(curl -fsSL "https://api.github.com/repos/${UPSTREAM_REPO}/releases/latest")
-          TAG_NAME=$(echo "$RELEASE_JSON" | jq -r '.tag_name')
+          set -e
+          TAG_NAME=""
+          if RELEASE_JSON=$(curl -fsSL "https://api.github.com/repos/${UPSTREAM_REPO}/releases/latest"); then
+            TAG_NAME=$(echo "$RELEASE_JSON" | jq -r '.tag_name')
+            if [ "$TAG_NAME" = "null" ]; then
+              TAG_NAME=""
+            fi
+          fi
           echo "tag=$TAG_NAME" >> $GITHUB_OUTPUT
 
-      - name: Get latest upstream commit on main
+      - name: Get latest upstream commit on default branch
         id: upstream_commit
         run: |
-          COMMIT_JSON=$(curl -fsSL "https://api.github.com/repos/${UPSTREAM_REPO}/commits/main")
-          SHA=$(echo "$COMMIT_JSON" | jq -r '.sha')
+          set -e
+          BRANCH="${{ steps.upstream_branch.outputs.branch }}"
+          SHA=""
+          if COMMIT_JSON=$(curl -fsSL "https://api.github.com/repos/${UPSTREAM_REPO}/commits/${BRANCH}"); then
+            SHA=$(echo "$COMMIT_JSON" | jq -r '.sha')
+            if [ "$SHA" = "null" ]; then
+              SHA=""
+            fi
+          fi
           echo "sha=$SHA" >> $GITHUB_OUTPUT
 
-      - name: Pull existing stable image (if any)
+      - name: Pull existing STABLE image (if any)
         id: pull_stable
         continue-on-error: true
         run: |
           docker pull "${IMAGE}:${STABLE_TAG}" || exit 0
 
-      - name: Read stable image labels (if present)
+      - name: Read STABLE image labels (if present)
         id: stable_labels
         run: |
           if docker image inspect "${IMAGE}:${STABLE_TAG}" >/dev/null 2>&1; then
@@ -63,13 +86,13 @@ jobs:
             echo "source_release=" >> $GITHUB_OUTPUT
           fi
 
-      - name: Pull existing nightly image (if any)
+      - name: Pull existing NIGHTLY image (if any)
         id: pull_nightly
         continue-on-error: true
         run: |
           docker pull "${IMAGE}:${NIGHTLY_TAG}" || exit 0
 
-      - name: Read nightly image labels (if present)
+      - name: Read NIGHTLY image labels (if present)
         id: nightly_labels
         run: |
           if docker image inspect "${IMAGE}:${NIGHTLY_TAG}" >/dev/null 2>&1; then
@@ -91,11 +114,11 @@ jobs:
           BUILD_STABLE="false"
           BUILD_NIGHTLY="false"
 
-          if [ -n "$UPSTREAM_REL" ] && [ "$UPSTREAM_REL" != "null" ] && [ "$UPSTREAM_REL" != "$CURRENT_REL" ]; then
+          if [ -n "$UPSTREAM_REL" ] && [ "$UPSTREAM_REL" != "$CURRENT_REL" ]; then
             BUILD_STABLE="true"
           fi
 
-          if [ -n "$UPSTREAM_SHA" ] && [ "$UPSTREAM_SHA" != "null" ] && [ "$UPSTREAM_SHA" != "$CURRENT_SHA" ]; then
+          if [ -n "$UPSTREAM_SHA" ] && [ "$UPSTREAM_SHA" != "$CURRENT_SHA" ]; then
             BUILD_NIGHTLY="true"
           fi
 
