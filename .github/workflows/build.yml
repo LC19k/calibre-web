@@ -30,14 +30,14 @@ jobs:
         run: |
           TAG=$(date +"%Y-%m-%d-%H%M")
           echo "TAG=$TAG" >> $GITHUB_ENV
-          docker build -t ghcr.io/${{ github.repository_owner }}/calibre-web:$TAG .
+          docker build -t ghcr.io/lc19k/calibre-web:$TAG .
 
       - name: Push versioned tag
         run: |
-          docker push ghcr.io/${{ github.repository_owner }}/calibre-web:${TAG}
+          docker push ghcr.io/lc19k/calibre-web:${TAG}
 
       - name: Tag latest
         run: |
-          docker tag ghcr.io/${{ github.repository_owner }}/calibre-web:${TAG} \
-                     ghcr.io/${{ github.repository_owner }}/calibre-web:latest
-          docker push ghcr.io/${{ github.repository_owner }}/calibre-web:latest
+          docker tag ghcr.io/lc19k/calibre-web:${TAG} \
+                     ghcr.io/lc19k/calibre-web:latest
+          docker push ghcr.io/lc19k/calibre-web:latest
