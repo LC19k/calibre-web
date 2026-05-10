@@ -1,5 +1,7 @@
 # calibre-web (LC19k build)
 
+![Build status](https://github.com/lc19k/calibre-web/actions/workflows/build.yml/badge.svg)
+
 A fully automated, upstream-aware, dual-channel Calibre-Web container image with:
 
 - **Stable channel** – auto-builds when upstream publishes a new release
