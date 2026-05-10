@@ -56,7 +56,10 @@ ENV PUID=99 \
     TZ=America/New_York
 
 # ⭐ Copy Python dependencies from builder stage
+# Copy all Python packages from builder
 COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
+COPY --from=builder /usr/local/lib/python3.11/dist-packages /usr/local/lib/python3.11/dist-packages
+COPY --from=builder /usr/lib/python3/dist-packages /usr/lib/python3/dist-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
 
 # Runtime-only system libs
