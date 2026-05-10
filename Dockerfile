@@ -13,7 +13,7 @@ RUN apt-get update && \
         imagemagick \
         libjpeg62-turbo \
         libpng16-16 \
-        libtiff5 \
+        libtiff6 \
         libfreetype6 \
         liblcms2-2 \
         libwebp7 \
