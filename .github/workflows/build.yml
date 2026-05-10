@@ -1,19 +1,45 @@
-name: Build and Publish Calibre-Web
+name: Build and Publish Calibre-Web (Stable + Nightly)
 
 on:
   push:
     branches: [ "main" ]
   schedule:
-    - cron: "0 6 * * *"   # Build nightly at 06:00 UTC
+    - cron: "0 5 * * *"   # Nightly check at 05:00 UTC
   workflow_dispatch:
+    inputs:
+      channel:
+        description: "Build channel (stable|nightly)"
+        required: false
+        default: "nightly"
 
 jobs:
-  build:
+  decide-channel:
+    runs-on: ubuntu-latest
+    outputs:
+      channel: ${{ steps.set-channel.outputs.channel }}
+    steps:
+      - name: Set channel based on trigger
+        id: set-channel
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            CH="${{ github.event.inputs.channel }}"
+          elif [ "${{ github.event_name }}" = "schedule" ]; then
+            CH="nightly"
+          else
+            CH="nightly"
+          fi
+          echo "channel=$CH" >> $GITHUB_OUTPUT
+
+  build-and-publish:
+    needs: decide-channel
     runs-on: ubuntu-latest
 
     permissions:
       contents: read
       packages: write
+
+    env:
+      CHANNEL: ${{ needs.decide-channel.outputs.channel }}
 
     steps:
       - name: Checkout
@@ -26,18 +52,36 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Compute tags
+        id: tags
+        run: |
+          DATE_TAG=$(date +"%Y%m%d-%H%M")
+          if [ "$CHANNEL" = "stable" ]; then
+            BASE_TAG="stable"
+          else
+            BASE_TAG="nightly"
+          fi
+          echo "base_tag=$BASE_TAG" >> $GITHUB_OUTPUT
+          echo "date_tag=${BASE_TAG}-${DATE_TAG}" >> $GITHUB_OUTPUT
+
       - name: Build image
         run: |
-          TAG=$(date +"%Y-%m-%d-%H%M")
-          echo "TAG=$TAG" >> $GITHUB_ENV
-          docker build -t ghcr.io/lc19k/calibre-web:$TAG .
+          BASE_TAG="${{ steps.tags.outputs.base_tag }}"
+          DATE_TAG="${{ steps.tags.outputs.date_tag }}"
+          docker build \
+            -t ghcr.io/lc19k/calibre-web:${BASE_TAG} \
+            -t ghcr.io/lc19k/calibre-web:${DATE_TAG} \
+            .
 
-      - name: Push versioned tag
+      - name: Push images
         run: |
-          docker push ghcr.io/lc19k/calibre-web:${TAG}
+          BASE_TAG="${{ steps.tags.outputs.base_tag }}"
+          DATE_TAG="${{ steps.tags.outputs.date_tag }}"
+          docker push ghcr.io/lc19k/calibre-web:${BASE_TAG}
+          docker push ghcr.io/lc19k/calibre-web:${DATE_TAG}
 
-      - name: Tag latest
+      - name: Tag latest (optional)
+        if: env.CHANNEL == 'stable'
         run: |
-          docker tag ghcr.io/lc19k/calibre-web:${TAG} \
-                     ghcr.io/lc19k/calibre-web:latest
+          docker tag ghcr.io/lc19k/calibre-web:stable ghcr.io/lc19k/calibre-web:latest
           docker push ghcr.io/lc19k/calibre-web:latest
