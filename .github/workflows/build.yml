@@ -1,37 +1,14 @@
-name: Build and Publish Calibre-Web (Stable + Nightly)
+name: Build and Publish Calibre-Web (Stable + Nightly, upstream-aware)
 
 on:
   push:
     branches: [ "main" ]
   schedule:
     - cron: "0 5 * * *"   # Nightly check at 05:00 UTC
-  workflow_dispatch:
-    inputs:
-      channel:
-        description: "Build channel (stable|nightly)"
-        required: false
-        default: "nightly"
+  workflow_dispatch: {}
 
 jobs:
-  decide-channel:
-    runs-on: ubuntu-latest
-    outputs:
-      channel: ${{ steps.set-channel.outputs.channel }}
-    steps:
-      - name: Set channel based on trigger
-        id: set-channel
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            CH="${{ github.event.inputs.channel }}"
-          elif [ "${{ github.event_name }}" = "schedule" ]; then
-            CH="nightly"
-          else
-            CH="nightly"
-          fi
-          echo "channel=$CH" >> $GITHUB_OUTPUT
-
-  build-and-publish:
-    needs: decide-channel
+  build:
     runs-on: ubuntu-latest
 
     permissions:
@@ -39,7 +16,10 @@ jobs:
       packages: write
 
     env:
-      CHANNEL: ${{ needs.decide-channel.outputs.channel }}
+      IMAGE: ghcr.io/lc19k/calibre-web
+      UPSTREAM_REPO: janeczku/calibre-web
+      STABLE_TAG: stable
+      NIGHTLY_TAG: nightly
 
     steps:
       - name: Checkout
@@ -52,36 +32,109 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Compute tags
-        id: tags
+      - name: Get latest upstream release tag
+        id: upstream_release
+        run: |
+          RELEASE_JSON=$(curl -fsSL "https://api.github.com/repos/${UPSTREAM_REPO}/releases/latest")
+          TAG_NAME=$(echo "$RELEASE_JSON" | jq -r '.tag_name')
+          echo "tag=$TAG_NAME" >> $GITHUB_OUTPUT
+
+      - name: Get latest upstream commit on main
+        id: upstream_commit
+        run: |
+          COMMIT_JSON=$(curl -fsSL "https://api.github.com/repos/${UPSTREAM_REPO}/commits/main")
+          SHA=$(echo "$COMMIT_JSON" | jq -r '.sha')
+          echo "sha=$SHA" >> $GITHUB_OUTPUT
+
+      - name: Pull existing stable image (if any)
+        id: pull_stable
+        continue-on-error: true
+        run: |
+          docker pull "${IMAGE}:${STABLE_TAG}" || exit 0
+
+      - name: Read stable image labels (if present)
+        id: stable_labels
+        run: |
+          if docker image inspect "${IMAGE}:${STABLE_TAG}" >/dev/null 2>&1; then
+            SRC_REL=$(docker inspect "${IMAGE}:${STABLE_TAG}" \
+              --format '{{ index .Config.Labels "org.opencontainers.image.source_release" }}')
+            echo "source_release=${SRC_REL}" >> $GITHUB_OUTPUT
+          else
+            echo "source_release=" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Pull existing nightly image (if any)
+        id: pull_nightly
+        continue-on-error: true
+        run: |
+          docker pull "${IMAGE}:${NIGHTLY_TAG}" || exit 0
+
+      - name: Read nightly image labels (if present)
+        id: nightly_labels
+        run: |
+          if docker image inspect "${IMAGE}:${NIGHTLY_TAG}" >/dev/null 2>&1; then
+            SRC_SHA=$(docker inspect "${IMAGE}:${NIGHTLY_TAG}" \
+              --format '{{ index .Config.Labels "org.opencontainers.image.source_commit" }}')
+            echo "source_commit=${SRC_SHA}" >> $GITHUB_OUTPUT
+          else
+            echo "source_commit=" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Decide what to build
+        id: decide
+        run: |
+          UPSTREAM_REL="${{ steps.upstream_release.outputs.tag }}"
+          CURRENT_REL="${{ steps.stable_labels.outputs.source_release }}"
+          UPSTREAM_SHA="${{ steps.upstream_commit.outputs.sha }}"
+          CURRENT_SHA="${{ steps.nightly_labels.outputs.source_commit }}"
+
+          BUILD_STABLE="false"
+          BUILD_NIGHTLY="false"
+
+          if [ -n "$UPSTREAM_REL" ] && [ "$UPSTREAM_REL" != "null" ] && [ "$UPSTREAM_REL" != "$CURRENT_REL" ]; then
+            BUILD_STABLE="true"
+          fi
+
+          if [ -n "$UPSTREAM_SHA" ] && [ "$UPSTREAM_SHA" != "null" ] && [ "$UPSTREAM_SHA" != "$CURRENT_SHA" ]; then
+            BUILD_NIGHTLY="true"
+          fi
+
+          echo "build_stable=$BUILD_STABLE" >> $GITHUB_OUTPUT
+          echo "build_nightly=$BUILD_NIGHTLY" >> $GITHUB_OUTPUT
+
+      - name: Build STABLE image
+        if: steps.decide.outputs.build_stable == 'true'
         run: |
           DATE_TAG=$(date +"%Y%m%d-%H%M")
-          if [ "$CHANNEL" = "stable" ]; then
-            BASE_TAG="stable"
-          else
-            BASE_TAG="nightly"
-          fi
-          echo "base_tag=$BASE_TAG" >> $GITHUB_OUTPUT
-          echo "date_tag=${BASE_TAG}-${DATE_TAG}" >> $GITHUB_OUTPUT
+          UPSTREAM_REL="${{ steps.upstream_release.outputs.tag }}"
 
-      - name: Build image
-        run: |
-          BASE_TAG="${{ steps.tags.outputs.base_tag }}"
-          DATE_TAG="${{ steps.tags.outputs.date_tag }}"
           docker build \
-            -t ghcr.io/lc19k/calibre-web:${BASE_TAG} \
-            -t ghcr.io/lc19k/calibre-web:${DATE_TAG} \
+            --label "org.opencontainers.image.version=stable-${DATE_TAG}" \
+            --label "org.opencontainers.image.source_release=${UPSTREAM_REL}" \
+            --label "org.opencontainers.image.source_channel=stable" \
+            -t "${IMAGE}:stable" \
+            -t "${IMAGE}:stable-${DATE_TAG}" \
             .
 
-      - name: Push images
-        run: |
-          BASE_TAG="${{ steps.tags.outputs.base_tag }}"
-          DATE_TAG="${{ steps.tags.outputs.date_tag }}"
-          docker push ghcr.io/lc19k/calibre-web:${BASE_TAG}
-          docker push ghcr.io/lc19k/calibre-web:${DATE_TAG}
+          docker push "${IMAGE}:stable"
+          docker push "${IMAGE}:stable-${DATE_TAG}"
 
-      - name: Tag latest (optional)
-        if: env.CHANNEL == 'stable'
+          docker tag "${IMAGE}:stable" "${IMAGE}:latest"
+          docker push "${IMAGE}:latest"
+
+      - name: Build NIGHTLY image
+        if: steps.decide.outputs.build_nightly == 'true'
         run: |
-          docker tag ghcr.io/lc19k/calibre-web:stable ghcr.io/lc19k/calibre-web:latest
-          docker push ghcr.io/lc19k/calibre-web:latest
+          DATE_TAG=$(date +"%Y%m%d-%H%M")
+          UPSTREAM_SHA="${{ steps.upstream_commit.outputs.sha }}"
+
+          docker build \
+            --label "org.opencontainers.image.version=nightly-${DATE_TAG}" \
+            --label "org.opencontainers.image.source_commit=${UPSTREAM_SHA}" \
+            --label "org.opencontainers.image.source_channel=nightly" \
+            -t "${IMAGE}:nightly" \
+            -t "${IMAGE}:nightly-${DATE_TAG}" \
+            .
+
+          docker push "${IMAGE}:nightly"
+          docker push "${IMAGE}:nightly-${DATE_TAG}"
