@@ -88,7 +88,7 @@ COPY --from=builder /usr/local/lib/python3.11/dist-packages /usr/local/lib/pytho
 COPY --from=builder /usr/lib/python3/dist-packages /usr/lib/python3/dist-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
 
-# Add entrypoint wrapper
+# Add entrypoint wrapper - editing this comment to force a rebuild.
 COPY scripts/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh && \
     chown -R abc:abc /app
