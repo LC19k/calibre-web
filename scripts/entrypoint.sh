@@ -5,15 +5,11 @@ set -e
 mkdir -p /config
 chown -R abc:abc /config
 
-# Default settings path if not provided
-SETTINGS_PATH=${SETTINGS_PATH:-/config/app.db}
+# Upstream Calibre-Web environment variables
+export CALIBRE_WEB_DB=${CALIBRE_WEB_DB:-/config/app.db}
+export CALIBRE_LIBRARY=${CALIBRE_LIBRARY:-/books}
 
-# Default calibre library path
-CALIBRE_LIBRARY=${CALIBRE_LIBRARY:-/books}
+echo "Using CALIBRE_WEB_DB: $CALIBRE_WEB_DB"
+echo "Using CALIBRE_LIBRARY: $CALIBRE_LIBRARY"
 
-echo "Using settings path: $SETTINGS_PATH"
-echo "Using calibre library: $CALIBRE_LIBRARY"
-
-exec python3 cps.py \
-    --settings_path="$SETTINGS_PATH" \
-    --calibre-library="$CALIBRE_LIBRARY"
+exec python3 cps.py
