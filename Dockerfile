@@ -6,7 +6,7 @@ ENV PUID=99 \
     UMASK=002 \
     TZ=America/New_York
 
-# Build + runtime deps
+# Build dependencies
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         git \
@@ -28,8 +28,7 @@ RUN apt-get update && \
         libxft2 \
         libxml2 \
         libxslt1.1 \
-        ca-certificates \
-        && \
+        ca-certificates && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -55,13 +54,6 @@ ENV PUID=99 \
     UMASK=002 \
     TZ=America/New_York
 
-# ⭐ Copy Python dependencies from builder stage
-# Copy all Python packages from builder
-COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
-COPY --from=builder /usr/local/lib/python3.11/dist-packages /usr/local/lib/python3.11/dist-packages
-COPY --from=builder /usr/lib/python3/dist-packages /usr/lib/python3/dist-packages
-COPY --from=builder /usr/local/bin /usr/local/bin
-
 # Runtime-only system libs
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
@@ -81,8 +73,7 @@ RUN apt-get update && \
         libxft2 \
         libxml2 \
         libxslt1.1 \
-        ca-certificates \
-        && \
+        ca-certificates && \
     rm -rf /var/lib/apt/lists/*
 
 # Create runtime user
@@ -90,14 +81,20 @@ RUN useradd -u ${PUID} -m abc
 
 WORKDIR /app/calibre-web
 
-# Copy application from builder
+# Copy application + Python deps from builder
 COPY --from=builder /app/calibre-web /app/calibre-web
+COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
+COPY --from=builder /usr/local/lib/python3.11/dist-packages /usr/local/lib/python3.11/dist-packages
+COPY --from=builder /usr/lib/python3/dist-packages /usr/lib/python3/dist-packages
+COPY --from=builder /usr/local/bin /usr/local/bin
 
-# Fix ownership
-RUN chown -R abc:abc /app
+# Add entrypoint wrapper
+COPY scripts/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh && \
+    chown -R abc:abc /app
 
 USER abc
 
 EXPOSE 8083
 
-CMD ["python3", "cps.py"]
+ENTRYPOINT ["/entrypoint.sh"]
