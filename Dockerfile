@@ -77,18 +77,19 @@ RUN apt-get update && \
         ca-certificates && \
     rm -rf /var/lib/apt/lists/*
 
+# Create abc user
 RUN useradd -u ${PUID} -m abc
 
 WORKDIR /app/calibre-web
 
-# Copy application from builder
+# Copy application from builder (code only)
 COPY --from=builder /app/calibre-web /app/calibre-web
 COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
 COPY --from=builder /usr/local/lib/python3.11/dist-packages /usr/local/lib/python3.11/dist-packages
 COPY --from=builder /usr/lib/python3/dist-packages /usr/lib/python3/dist-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
 
-# NEW ENTRYPOINT (Option A)
+# New entrypoint for /config-based persistence
 COPY scripts/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh && \
     chown -R abc:abc /app
