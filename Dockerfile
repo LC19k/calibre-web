@@ -6,7 +6,7 @@ ENV PUID=99 \
     UMASK=002 \
     TZ=America/New_York
 
-# Build + runtime deps
+# Build dependencies
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         git \
@@ -28,13 +28,12 @@ RUN apt-get update && \
         libxft2 \
         libxml2 \
         libxslt1.1 \
-        ca-certificates \
-        && \
+        ca-certificates && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Clone Calibre-Web
+# ALWAYS clone upstream fresh — never use local files
 RUN git clone https://github.com/janeczku/calibre-web.git /app/calibre-web
 
 WORKDIR /app/calibre-web
@@ -42,7 +41,7 @@ WORKDIR /app/calibre-web
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Install plugins
+# Optional plugin setup
 COPY scripts/plugin-setup.sh /app/plugin-setup.sh
 RUN chmod +x /app/plugin-setup.sh && /app/plugin-setup.sh /app/calibre-web
 
@@ -82,14 +81,15 @@ RUN useradd -u ${PUID} -m abc
 
 WORKDIR /app/calibre-web
 
-# Copy application from builder (code only)
-COPY --from=builder /app/calibre-web /app/calibre-web
-COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
-COPY --from=builder /usr/local/lib/python3.11/dist-packages /usr/local/lib/python3.11/dist-packages
-COPY --from=builder /usr/lib/python3/dist-packages /usr/lib/python3/dist-packages
+# Copy ALL Python libs from builder (critical!)
+COPY --from=builder /usr/local/lib /usr/local/lib
+COPY --from=builder /usr/lib /usr/lib
 COPY --from=builder /usr/local/bin /usr/local/bin
 
-# New entrypoint for /config-based persistence
+# Copy application code
+COPY --from=builder /app/calibre-web /app/calibre-web
+
+# Entry point for Option B persistence
 COPY scripts/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh && \
     chown -R abc:abc /app
